@@ -56,6 +56,11 @@ type ClueRow = {
   text: string
 }
 
+type SoupCategoryLinkRow = {
+  is_primary: boolean
+  soup_categories: { id: string; name: string; tone: Soup['accent'] } | Array<{ id: string; name: string; tone: Soup['accent'] }> | null
+}
+
 type GuessRow = {
   text: string
   score: number
@@ -74,6 +79,15 @@ type SoupRow = {
   max_players: number | null
   rating: number | null
   accent: Soup['accent'] | null
+  tags: string[] | null
+  content_rating: string | null
+  source_kind: 'original' | 'licensed' | null
+  soup_category_links?: SoupCategoryLinkRow[] | null
+}
+
+type SoupCaseRevealRow = {
+  solution: string
+  target_clue_count: number
 }
 
 export type CommunityPost = {
@@ -180,7 +194,7 @@ export async function fetchSoups(): Promise<Soup[]> {
   const client = requireSupabase()
   const { data, error } = await client
     .from('soups')
-    .select('id,slug,title,prompt,difficulty,duration_minutes,min_players,max_players,rating,accent')
+    .select('id,slug,title,prompt,difficulty,duration_minutes,min_players,max_players,rating,accent,tags,content_rating,source_kind,soup_category_links(is_primary,soup_categories(id,name,tone))')
     .eq('is_published', true)
     .order('rating', { ascending: false })
 
@@ -641,6 +655,7 @@ export async function loadRoomSnapshot(roomId: string, knownSoup?: Soup): Promis
   const clueBoard = groupClues(clues)
   const lastGuess = guesses[0]
   const isRevealed = (room as RoomRow).status === 'finished' || Boolean(lastGuess?.is_correct)
+  const revealCase = isRevealed ? await fetchSoupCaseForReveal(soup.dbId) : undefined
 
   return {
     soup,
@@ -654,6 +669,8 @@ export async function loadRoomSnapshot(roomId: string, knownSoup?: Soup): Promis
       guess: lastGuess?.text ?? '',
       score: lastGuess?.score ?? 0,
       lastAnswer: questions.at(-1)?.answer,
+      solution: revealCase?.solution,
+      targetClueCount: revealCase?.target_clue_count,
       startedAt: new Date((room as RoomRow).started_at ?? (room as RoomRow).created_at).getTime(),
       finishedAt: (room as RoomRow).finished_at ? new Date((room as RoomRow).finished_at!).getTime() : undefined,
     },
@@ -661,6 +678,7 @@ export async function loadRoomSnapshot(roomId: string, knownSoup?: Soup): Promis
 }
 
 function mapSoupRow(row: SoupRow): Soup {
+  const category = getPrimaryCategory(row.soup_category_links)
   const players =
     row.min_players && row.max_players
       ? `${row.min_players}-${row.max_players}人`
@@ -673,7 +691,11 @@ function mapSoupRow(row: SoupRow): Soup {
     dbId: row.id,
     title: row.title,
     prompt: row.prompt,
-    tags: [],
+    tags: row.tags?.length ? row.tags : category ? [category.name] : [],
+    categoryId: category?.id,
+    categoryName: category?.name,
+    contentRating: row.content_rating ?? undefined,
+    sourceKind: row.source_kind === 'licensed' ? 'licensed' : 'original',
     difficulty: row.difficulty ?? '普通',
     duration: row.duration_minutes ? `${row.duration_minutes}分钟` : '15分钟',
     rating: Number(row.rating ?? 4.6),
@@ -706,13 +728,28 @@ async function fetchSoupByDbId(dbId: string): Promise<Soup> {
   const client = requireSupabase()
   const { data, error } = await client
     .from('soups')
-    .select('id,slug,title,prompt,difficulty,duration_minutes,min_players,max_players,rating,accent')
+    .select('id,slug,title,prompt,difficulty,duration_minutes,min_players,max_players,rating,accent,tags,content_rating,source_kind,soup_category_links(is_primary,soup_categories(id,name,tone))')
     .eq('id', dbId)
     .single()
 
   if (error) throw error
 
   return mapSoupRow(data as SoupRow)
+}
+
+async function fetchSoupCaseForReveal(dbId: string | undefined): Promise<SoupCaseRevealRow | undefined> {
+  if (!dbId) return undefined
+
+  const client = requireSupabase()
+  const { data, error } = await client
+    .from('soup_cases')
+    .select('solution,target_clue_count')
+    .eq('soup_id', dbId)
+    .maybeSingle()
+
+  if (error) throw error
+
+  return data as SoupCaseRevealRow | undefined
 }
 
 async function fetchMembers(roomId: string): Promise<Player[]> {
@@ -810,6 +847,11 @@ function getNestedSlug(item: { slug: string } | Array<{ slug: string }> | null):
   if (!item) return undefined
   if (Array.isArray(item)) return item[0]?.slug
   return item.slug
+}
+
+function getPrimaryCategory(links: SoupCategoryLinkRow[] | null | undefined): { id: string; name: string; tone: Soup['accent'] } | undefined {
+  const link = links?.find((item) => item.is_primary) ?? links?.[0]
+  return getSingle(link?.soup_categories ?? null)
 }
 
 function getSingle<T>(item: T | T[] | null): T | undefined {

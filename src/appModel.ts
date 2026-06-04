@@ -44,9 +44,13 @@ export type GameState = {
   guess: string
   score: number
   lastAnswer?: Answer
+  solution?: string
+  targetClueCount?: number
   startedAt: number
   finishedAt?: number
 }
+
+export type SoupCategoryId = 'red' | 'black' | 'funny' | 'weird' | 'emotion' | 'clear'
 
 export type Soup = {
   id: string
@@ -54,11 +58,15 @@ export type Soup = {
   title: string
   prompt: string
   tags: string[]
+  categoryId?: SoupCategoryId | string
+  categoryName?: string
+  contentRating?: string
+  sourceKind?: 'original' | 'licensed'
   difficulty: string
   duration: string
   rating: number
   players: string
-  accent: 'cyan' | 'gold' | 'red' | 'violet'
+  accent: 'cyan' | 'gold' | 'red' | 'violet' | 'green' | 'amber'
 }
 
 export type Player = {
@@ -108,6 +116,10 @@ export const soups: Soup[] = [
     title: '红雨衣',
     prompt: '雨一直下着，男孩穿着红雨衣站出门，再也没有回来。',
     tags: ['悬疑', '微恐', '15分钟'],
+    categoryId: 'red',
+    categoryName: '红汤',
+    contentRating: '18+暗黑',
+    sourceKind: 'original',
     difficulty: '普通',
     duration: '15分钟',
     rating: 4.8,
@@ -119,6 +131,10 @@ export const soups: Soup[] = [
     title: '空镜子',
     prompt: '她每天对着镜子化妆，直到有天镜子里只剩房间。',
     tags: ['心理', '微恐', '20分钟'],
+    categoryId: 'black',
+    categoryName: '黑汤',
+    contentRating: '18+暗黑',
+    sourceKind: 'original',
     difficulty: '困难',
     duration: '20分钟',
     rating: 4.7,
@@ -130,6 +146,10 @@ export const soups: Soup[] = [
     title: '白色电梯',
     prompt: '电梯停在不存在的楼层，所有人都说她迟到了。',
     tags: ['反转', '都市', '15分钟'],
+    categoryId: 'black',
+    categoryName: '黑汤',
+    contentRating: '18+暗黑',
+    sourceKind: 'original',
     difficulty: '普通',
     duration: '15分钟',
     rating: 4.6,
@@ -141,22 +161,30 @@ export const soups: Soup[] = [
     title: '没有咖啡',
     prompt: '老板说咖啡售罄后，整条街的人都安静了下来。',
     tags: ['荒诞', '逻辑', '15分钟'],
+    categoryId: 'funny',
+    categoryName: '王八汤',
+    contentRating: '16+荒诞',
+    sourceKind: 'original',
     difficulty: '新手',
     duration: '15分钟',
     rating: 4.6,
     players: '1-4人',
-    accent: 'cyan',
+    accent: 'green',
   },
   {
     id: 'vanished-dinner',
     title: '消失的晚餐',
     prompt: '一家人围坐在餐桌前，却没有人记得是谁做了晚餐。',
     tags: ['家庭', '暗黑', '20分钟'],
+    categoryId: 'emotion',
+    categoryName: '情感汤',
+    contentRating: '18+暗黑',
+    sourceKind: 'original',
     difficulty: '困难',
     duration: '20分钟',
     rating: 4.5,
     players: '3-8人',
-    accent: 'gold',
+    accent: 'amber',
   },
 ]
 
@@ -431,6 +459,8 @@ export function createGameState(soup: Soup = soups[0], roomCode = 'SOLO'): GameS
     clues: cloneClues(soupCase.starterClues),
     guess: '',
     score: 0,
+    solution: soupCase.solution,
+    targetClueCount: soupCase.targetClueCount,
     startedAt: Date.now(),
   }
 }

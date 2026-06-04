@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "check:text": "node scripts/check-text-integrity.mjs",
+    "content:generate": "node scripts/generate-soup-content.mjs",
+    "content:validate": "node scripts/validate-soup-content.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "qa:cloud-game": "node scripts/qa-cloud-game.mjs",

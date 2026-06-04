@@ -740,6 +740,7 @@ function HomeScreen({
           <strong>{soup.title}</strong>
           <p>{soup.prompt}</p>
           <div className="meta-row">
+            {soup.categoryName && <Chip label={soup.categoryName} />}
             <Chip label={soup.difficulty} />
             <Rating value={soup.rating} />
             <span>{soup.duration}</span>
@@ -804,7 +805,20 @@ function LibraryScreen({
   favoriteSoupIds: Set<string>
   onOpenSoup: (soup: Soup) => void
 }) {
-  const filters = ['全部', '微恐', '15分钟', '悬疑', '热门']
+  const [activeCategory, setActiveCategory] = useState('all')
+  const filters = useMemo(() => {
+    const categoryMap = new Map<string, string>()
+    soupList.forEach((item) => {
+      if (item.categoryId && item.categoryName) categoryMap.set(item.categoryId, item.categoryName)
+    })
+
+    return [{ id: 'all', name: '全部' }, ...Array.from(categoryMap, ([id, name]) => ({ id, name }))]
+  }, [soupList])
+  const visibleCategory = filters.some((filter) => filter.id === activeCategory) ? activeCategory : 'all'
+  const visibleSoups = useMemo(
+    () => (visibleCategory === 'all' ? soupList : soupList.filter((item) => item.categoryId === visibleCategory)),
+    [soupList, visibleCategory],
+  )
 
   return (
     <ScrollView>
@@ -813,14 +827,19 @@ function LibraryScreen({
         <span>搜索汤名、标签、作者</span>
       </div>
       <div className="filter-row">
-        {filters.map((filter, index) => (
-          <button className={`filter-chip ${index === 0 ? 'active' : ''}`} type="button" key={filter}>
-            {filter}
+        {filters.map((filter) => (
+          <button
+            className={`filter-chip ${filter.id === visibleCategory ? 'active' : ''}`}
+            type="button"
+            key={filter.id}
+            onClick={() => setActiveCategory(filter.id)}
+          >
+            {filter.name}
           </button>
         ))}
       </div>
       <div className="soup-list">
-        {soupList.map((soup) => (
+        {visibleSoups.map((soup) => (
           <SoupRow
             key={soup.id}
             soup={soup}
@@ -829,6 +848,7 @@ function LibraryScreen({
             onOpen={() => onOpenSoup(soup)}
           />
         ))}
+        {visibleSoups.length === 0 && <p className="empty-state">这个分类暂时没有汤面。</p>}
       </div>
     </ScrollView>
   )
@@ -859,6 +879,11 @@ function DetailScreen({
           {'★★★★★'}
           <span>{soup.rating}</span>
         </div>
+        <div className="detail-meta-row">
+          {soup.categoryName && <Chip label={soup.categoryName} />}
+          {soup.contentRating && <Chip label={soup.contentRating} />}
+          {soup.sourceKind && <Chip label={soup.sourceKind === 'licensed' ? '授权题库' : '原创题库'} />}
+        </div>
       </div>
 
       <section className="story-panel scan-panel">
@@ -887,12 +912,12 @@ function DetailScreen({
 
       <section className="info-card">
         <div>
-          <span>作者</span>
-          <strong>玄汤官方</strong>
+          <span>来源</span>
+          <strong>{soup.sourceKind === 'licensed' ? '授权题库' : '玄汤原创题库'}</strong>
         </div>
         <div>
-          <span>已被</span>
-          <strong>1.2k 位侦探挑战</strong>
+          <span>分类</span>
+          <strong>{soup.categoryName ?? '未分类'}</strong>
         </div>
         <button
           className={isFavorite ? 'icon-btn favorite active' : 'icon-btn favorite'}
@@ -1162,7 +1187,7 @@ function GameScreen({
 
 function ClueBoardScreen({ game, soup, onGuess }: { game: GameState; soup: Soup; onGuess: () => void }) {
   const collected = countClues(game.clues)
-  const target = getTargetClueCount(soup.id)
+  const target = game.targetClueCount ?? getTargetClueCount(soup.id)
 
   return (
     <ScrollView
@@ -1240,7 +1265,7 @@ function RevealScreen({
   onHome: () => void
 }) {
   const collected = countClues(game.clues)
-  const target = getTargetClueCount(soup.id)
+  const target = game.targetClueCount ?? getTargetClueCount(soup.id)
   const stats = useMemo(
     () => [
       { label: '关键线索', value: `${Math.min(collected, target)}/${target}` },
@@ -1267,7 +1292,7 @@ function RevealScreen({
       </div>
       <section className="truth-card scan-panel">
         <p className="section-heading">真相解析</p>
-        <p>{getSolution(soup.id)}</p>
+        <p>{game.solution ?? getSolution(soup.id)}</p>
       </section>
       <section className="truth-card player-guess">
         <p className="section-heading">你的汤底</p>
@@ -1569,6 +1594,8 @@ function SoupRow({
   favorite?: boolean
   onOpen: () => void
 }) {
+  const meta = [soup.categoryName, ...soup.tags].filter(Boolean).join(' · ')
+
   return (
     <button
       className={`soup-row ${active ? 'active' : ''} ${compact ? 'compact' : ''}`}
@@ -1578,7 +1605,7 @@ function SoupRow({
       <SoupBadge tone={soup.accent} />
       <div>
         <strong>{soup.title}</strong>
-        <span>{soup.tags.join(' · ')}</span>
+        <span>{meta}</span>
       </div>
       <span className="soup-row-meta">
         {favorite && <Heart size={13} fill="currentColor" aria-label="已收藏" />}

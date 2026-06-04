@@ -918,6 +918,13 @@ button:disabled {
   color: var(--text);
 }
 
+.detail-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .story-panel p,
 .truth-card p,
 .rules-card p,

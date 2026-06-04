@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 qa-artifacts
+test-results
 supabase/.temp
 *.local
 
