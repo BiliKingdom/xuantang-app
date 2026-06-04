@@ -1,0 +1,14 @@
+project_id = "xuantang-app"
+
+[auth]
+site_url = "https://xuantang-app.vercel.app"
+additional_redirect_urls = [
+  "http://127.0.0.1:5173",
+  "http://localhost:5173",
+  "https://xuantang-app.vercel.app"
+]
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false

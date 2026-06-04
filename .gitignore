@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 qa-artifacts
+supabase/.temp
 *.local
 
 # Editor directories and files
@@ -23,3 +24,5 @@ qa-artifacts
 *.njsproj
 *.sln
 *.sw?
+
+.vercel
