@@ -304,7 +304,7 @@ begin
   end if;
 
   loop
-    new_code := upper(substr(encode(gen_random_bytes(4), 'hex'), 1, 4));
+    new_code := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 4));
     exit when not exists (select 1 from public.rooms where code = new_code);
     attempts := attempts + 1;
     if attempts > 12 then
