@@ -199,7 +199,8 @@
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
   letter-spacing: 0;
 }
@@ -264,6 +265,12 @@ button:disabled {
   padding: 0 18px;
   border-radius: 13px;
   font-size: 13px;
+}
+
+.primary-btn.compact {
+  min-height: 40px;
+  border-radius: 12px;
+  font-size: 12px;
 }
 
 .secondary-btn {
@@ -811,6 +818,14 @@ button:disabled {
   min-height: 54px;
 }
 
+.soup-row-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--accent-gold);
+}
+
 .soup-badge {
   width: 26px;
   height: 36px;
@@ -960,6 +975,16 @@ button:disabled {
   font-size: 12px;
 }
 
+.info-card .favorite {
+  color: var(--muted);
+}
+
+.info-card .favorite.active {
+  color: var(--danger-red);
+  border-color: rgba(255, 63, 84, 0.34);
+  background: rgba(255, 63, 84, 0.09);
+}
+
 .selected-soup button {
   color: var(--accent-cyan);
   background: transparent;
@@ -980,9 +1005,11 @@ button:disabled {
 }
 
 .field-control input,
+.field-control select,
+.field-control textarea,
 .local-join input {
   width: 100%;
-  height: 44px;
+  min-height: 44px;
   border: 1px solid rgba(99, 255, 242, 0.12);
   border-radius: 13px;
   box-sizing: border-box;
@@ -993,11 +1020,22 @@ button:disabled {
   font-size: 13px;
 }
 
+.field-control textarea {
+  min-height: 96px;
+  padding: 12px 13px;
+  resize: none;
+}
+
+.field-control select {
+  appearance: none;
+}
+
 .auth-panel .field-control {
   margin-top: 0;
 }
 
 .field-control input::placeholder,
+.field-control textarea::placeholder,
 .local-join input::placeholder {
   color: #55767c;
 }
@@ -1420,6 +1458,21 @@ button:disabled {
   padding: 14px;
 }
 
+.composer-card {
+  display: grid;
+  gap: 10px;
+}
+
+.composer-card .field-control {
+  margin-top: 0;
+}
+
+.composer-actions {
+  display: grid;
+  grid-template-columns: 0.85fr 1fr;
+  gap: 10px;
+}
+
 .post-head,
 .profile-card {
   display: flex;
@@ -1470,10 +1523,69 @@ button:disabled {
 .achievement {
   grid-template-columns: auto 1fr auto;
   margin-top: 10px;
+  opacity: 0.62;
+}
+
+.achievement.earned {
+  opacity: 1;
+  border-color: rgba(242, 196, 90, 0.24);
+  background:
+    linear-gradient(135deg, rgba(242, 196, 90, 0.12), transparent 36%),
+    rgba(2, 13, 21, 0.58);
 }
 
 .achievement svg {
   color: var(--accent-gold);
+}
+
+.achievement-state {
+  min-width: 42px;
+  justify-self: end;
+  color: var(--accent-cyan) !important;
+  font-size: 10px !important;
+  font-weight: 900;
+}
+
+.history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.history-item {
+  min-height: 62px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  background: rgba(2, 13, 21, 0.52);
+  border: 1px solid rgba(99, 255, 242, 0.09);
+}
+
+.history-item strong,
+.history-item span {
+  display: block;
+}
+
+.history-item strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.history-item span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.history-item b {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.history-item b.correct {
+  color: var(--accent-green);
 }
 
 .avatar {

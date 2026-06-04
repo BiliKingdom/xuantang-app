@@ -4,7 +4,7 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 
-const APP_URL = process.env.QA_APP_URL ?? 'http://127.0.0.1:5173/'
+const REQUESTED_APP_URL = process.env.QA_APP_URL
 const WIDTH = Number(process.env.QA_WIDTH ?? 430)
 const HEIGHT = Number(process.env.QA_HEIGHT ?? 900)
 const ARTIFACT_DIR = path.resolve(process.env.QA_ARTIFACT_DIR ?? 'qa-artifacts')
@@ -70,6 +70,24 @@ async function getJson(url, attempts = 50) {
     }
 
     await delay(200)
+  }
+
+  throw lastError
+}
+
+async function waitForHttp(url, attempts = 80) {
+  let lastError
+
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      const response = await fetch(url)
+      if (response.ok) return
+      lastError = new Error(`HTTP ${response.status}`)
+    } catch (error) {
+      lastError = error
+    }
+
+    await delay(250)
   }
 
   throw lastError
@@ -141,6 +159,27 @@ function createCdpClient(webSocketUrl) {
 async function main() {
   await fs.mkdir(ARTIFACT_DIR, { recursive: true })
 
+  let appUrl = REQUESTED_APP_URL
+  let devServer
+
+  if (!appUrl) {
+    const appPort = await getFreePort()
+    appUrl = `http://127.0.0.1:${appPort}/`
+    devServer = spawn(
+      process.execPath,
+      [path.resolve('node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(appPort)],
+      {
+      env: {
+        ...process.env,
+        VITE_XUANTANG_LOCAL_ONLY: 'true',
+      },
+      stdio: 'ignore',
+      windowsHide: true,
+      },
+    )
+    await waitForHttp(appUrl)
+  }
+
   const browserPath = await findBrowser()
   const port = await getFreePort()
   const profileDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xuantang-qa-'))
@@ -152,7 +191,7 @@ async function main() {
     '--disable-gpu',
     '--no-first-run',
     '--no-default-browser-check',
-    APP_URL,
+    appUrl,
   ]
   const browser = spawn(browserPath, args, { stdio: 'ignore', windowsHide: true })
 
@@ -272,7 +311,7 @@ async function main() {
       deviceScaleFactor: 2,
       mobile: true,
     })
-    await cdp.send('Page.navigate', { url: APP_URL })
+    await cdp.send('Page.navigate', { url: appUrl })
     await delay(700)
     await evalPage(() => {
       localStorage.clear()
@@ -331,6 +370,7 @@ async function main() {
     await setInput('输入你认为的汤底真相', '男孩躲在衣柜里，用红雨衣伪装后让别人出门，暴雨冲掉脚印，家人误会。')
     await clickText('提交猜测')
     await waitForText('真相揭晓')
+    await delay(700)
     shots.push(await snapshot('06-reveal.png'))
 
     const finalText = await evalPage(() => document.body.innerText)
@@ -342,7 +382,7 @@ async function main() {
       JSON.stringify(
         {
           ok: true,
-          appUrl: APP_URL,
+          appUrl,
           viewport: `${WIDTH}x${HEIGHT}`,
           finalHasReveal: finalText.includes('真相揭晓'),
           screenshots: shots,
@@ -354,6 +394,7 @@ async function main() {
     )
   } finally {
     browser.kill()
+    devServer?.kill()
   }
 }
 

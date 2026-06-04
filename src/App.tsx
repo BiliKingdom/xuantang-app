@@ -49,16 +49,26 @@ import {
 import { getCurrentProfile, onAuthStateChange, signIn, signOut, signUp, type AuthProfile } from './features/auth/authService'
 import {
   askQuestion,
+  awardAchievements,
+  createCommunityPost,
   createGame,
   createRoom,
+  fetchAchievements,
   fetchCommunityPosts,
+  fetchFavoriteSoupIds,
+  fetchGameHistory,
   fetchProfileStats,
   fetchSoups,
   joinRoomByCode,
   loadRoomSnapshot,
+  recordGameOutcome,
+  recordQuestionAchievements,
   startRoom,
   submitGuess,
+  toggleFavoriteSoup,
+  type AchievementView,
   type CommunityPost,
+  type GameHistoryItem,
   type ProfileStats,
 } from './features/game/api'
 import { subscribeToRoom } from './features/game/realtime'
@@ -127,6 +137,9 @@ function App() {
   const [guessNotice, setGuessNotice] = useState('')
   const [busyMessage, setBusyMessage] = useState('')
   const [showBoot, setShowBoot] = useState(true)
+  const [favoriteSoupIds, setFavoriteSoupIds] = useState<Set<string>>(() => new Set())
+  const [favoriteBusySoupId, setFavoriteBusySoupId] = useState('')
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0)
   const activeTab = tabs.some((tab) => tab.screen === screen) ? screen : undefined
   const title =
     screen === 'detail'
@@ -162,6 +175,8 @@ function App() {
       setProfile(nextProfile)
       if (nextProfile) {
         setHostName(nextProfile.nickname)
+      } else {
+        setFavoriteSoupIds(new Set())
       }
     })
 
@@ -190,6 +205,22 @@ function App() {
   }, [profile])
 
   useEffect(() => {
+    if (!profile) return
+
+    let alive = true
+
+    void fetchFavoriteSoupIds(profile, availableSoups)
+      .then((ids) => {
+        if (alive) setFavoriteSoupIds(ids)
+      })
+      .catch((error: unknown) => setBusyMessage(getErrorMessage(error)))
+
+    return () => {
+      alive = false
+    }
+  }, [availableSoups, profile])
+
+  useEffect(() => {
     if (!room?.cloudId) return
 
     return subscribeToRoom(room, () => {
@@ -210,6 +241,31 @@ function App() {
   function openSoup(soup: Soup) {
     setActiveSoup(soup)
     go('detail')
+  }
+
+  async function handleToggleFavorite(soup: Soup) {
+    if (!profile || favoriteBusySoupId) return
+
+    const shouldFavorite = !favoriteSoupIds.has(soup.id)
+    setFavoriteBusySoupId(soup.id)
+
+    try {
+      await toggleFavoriteSoup(profile, soup, shouldFavorite)
+      const nextIds = new Set(favoriteSoupIds)
+      if (shouldFavorite) nextIds.add(soup.id)
+      else nextIds.delete(soup.id)
+      setFavoriteSoupIds(nextIds)
+
+      if (nextIds.size >= 20) {
+        await awardAchievements(profile, ['collector'])
+      }
+
+      setProfileRefreshKey((value) => value + 1)
+    } catch (error) {
+      setBusyMessage(getErrorMessage(error))
+    } finally {
+      setFavoriteBusySoupId('')
+    }
   }
 
   async function createLocalRoom() {
@@ -296,6 +352,9 @@ function App() {
       const next = await askQuestion(room, game, question, profile)
       setGame(next)
       setQuestion('')
+      void recordQuestionAchievements(profile, next, activeSoup)
+        .then(() => setProfileRefreshKey((value) => value + 1))
+        .catch((error: unknown) => setBusyMessage(getErrorMessage(error)))
     } catch (error) {
       setBusyMessage(getErrorMessage(error))
     }
@@ -316,6 +375,10 @@ function App() {
       setGuess(next.game.guess)
 
       if (next.game.phase === 'revealed') {
+        if (profile) {
+          await recordGameOutcome(profile, next.room, next.game, activeSoup)
+          setProfileRefreshKey((value) => value + 1)
+        }
         setGuessNotice('')
         go('reveal')
       } else {
@@ -331,6 +394,8 @@ function App() {
     setProfile(null)
     setRoom(undefined)
     setGame(createGameState())
+    setFavoriteSoupIds(new Set())
+    setProfileRefreshKey(0)
     setScreen('onboarding')
   }
 
@@ -386,9 +451,23 @@ function App() {
               onJoinByCode={() => void joinLocalRoom()}
             />
           )}
-          {screen === 'library' && <LibraryScreen soups={availableSoups} activeSoup={activeSoup} onOpenSoup={openSoup} />}
+          {screen === 'library' && (
+            <LibraryScreen
+              soups={availableSoups}
+              activeSoup={activeSoup}
+              favoriteSoupIds={favoriteSoupIds}
+              onOpenSoup={openSoup}
+            />
+          )}
           {screen === 'detail' && (
-            <DetailScreen soup={activeSoup} onCreate={() => go('create')} onSolo={startSoloGame} />
+            <DetailScreen
+              soup={activeSoup}
+              isFavorite={favoriteSoupIds.has(activeSoup.id)}
+              favoriteBusy={favoriteBusySoupId === activeSoup.id}
+              onCreate={() => go('create')}
+              onSolo={startSoloGame}
+              onToggleFavorite={() => void handleToggleFavorite(activeSoup)}
+            />
           )}
           {screen === 'create' && (
             <CreateRoomScreen
@@ -437,8 +516,10 @@ function App() {
             />
           )}
           {screen === 'reveal' && <RevealScreen game={game} soup={activeSoup} room={room} onHome={() => go('home')} />}
-          {screen === 'community' && <CommunityScreen />}
-          {screen === 'profile' && <ProfileScreen profile={profile} onSignOut={() => void handleSignOut()} />}
+          {screen === 'community' && <CommunityScreen profile={profile} soups={availableSoups} />}
+          {screen === 'profile' && (
+            <ProfileScreen profile={profile} refreshKey={profileRefreshKey} onSignOut={() => void handleSignOut()} />
+          )}
         </div>
         {busyMessage && <div className="toast-notice">{busyMessage}</div>}
         {activeTab && <BottomNav active={activeTab} onSelect={go} />}
@@ -715,10 +796,12 @@ function HomeScreen({
 function LibraryScreen({
   soups: soupList,
   activeSoup,
+  favoriteSoupIds,
   onOpenSoup,
 }: {
   soups: Soup[]
   activeSoup: Soup
+  favoriteSoupIds: Set<string>
   onOpenSoup: (soup: Soup) => void
 }) {
   const filters = ['全部', '微恐', '15分钟', '悬疑', '热门']
@@ -742,6 +825,7 @@ function LibraryScreen({
             key={soup.id}
             soup={soup}
             active={soup.id === activeSoup.id}
+            favorite={favoriteSoupIds.has(soup.id)}
             onOpen={() => onOpenSoup(soup)}
           />
         ))}
@@ -752,12 +836,18 @@ function LibraryScreen({
 
 function DetailScreen({
   soup,
+  isFavorite,
+  favoriteBusy,
   onCreate,
   onSolo,
+  onToggleFavorite,
 }: {
   soup: Soup
+  isFavorite: boolean
+  favoriteBusy: boolean
   onCreate: () => void
   onSolo: () => void
+  onToggleFavorite: () => void
 }) {
   return (
     <ScrollView>
@@ -804,7 +894,15 @@ function DetailScreen({
           <span>已被</span>
           <strong>1.2k 位侦探挑战</strong>
         </div>
-        <Heart size={20} />
+        <button
+          className={isFavorite ? 'icon-btn favorite active' : 'icon-btn favorite'}
+          type="button"
+          onClick={onToggleFavorite}
+          disabled={favoriteBusy}
+          aria-label={isFavorite ? '取消收藏' : '收藏汤面'}
+        >
+          <Heart size={20} fill={isFavorite ? 'currentColor' : 'none'} />
+        </button>
       </section>
     </ScrollView>
   )
@@ -1191,9 +1289,14 @@ function RevealScreen({
   )
 }
 
-function CommunityScreen() {
+function CommunityScreen({ profile, soups: soupList }: { profile: AuthProfile; soups: Soup[] }) {
   const [posts, setPosts] = useState<CommunityPost[]>([])
   const [message, setMessage] = useState('')
+  const [showComposer, setShowComposer] = useState(false)
+  const [postTitle, setPostTitle] = useState('')
+  const [postBody, setPostBody] = useState('')
+  const [postSoupId, setPostSoupId] = useState(soupList[0]?.id ?? '')
+  const activeSoup = soupList.find((soup) => soup.id === postSoupId) ?? soupList[0]
 
   useEffect(() => {
     let alive = true
@@ -1211,6 +1314,22 @@ function CommunityScreen() {
     }
   }, [])
 
+  async function handleCreatePost() {
+    if (!activeSoup) return
+
+    setMessage('')
+
+    try {
+      const post = await createCommunityPost(profile, activeSoup, postTitle, postBody)
+      setPosts((items) => [post, ...items])
+      setPostTitle('')
+      setPostBody('')
+      setShowComposer(false)
+    } catch (error) {
+      setMessage(getErrorMessage(error))
+    }
+  }
+
   return (
     <ScrollView>
       <div className="community-tabs">
@@ -1220,6 +1339,47 @@ function CommunityScreen() {
           </button>
         ))}
       </div>
+      {showComposer && (
+        <section className="composer-card scan-panel">
+          <p className="section-heading">发布汤帖</p>
+          <label className="field-control">
+            <span>标题</span>
+            <input
+              value={postTitle}
+              onChange={(event) => setPostTitle(event.target.value)}
+              maxLength={24}
+              placeholder="写一个让人想点开的标题"
+            />
+          </label>
+          <label className="field-control">
+            <span>关联汤面</span>
+            <select value={postSoupId} onChange={(event) => setPostSoupId(event.target.value)}>
+              {soupList.map((soup) => (
+                <option key={soup.id} value={soup.id}>
+                  {soup.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-control">
+            <span>正文</span>
+            <textarea
+              value={postBody}
+              onChange={(event) => setPostBody(event.target.value)}
+              maxLength={140}
+              placeholder="分享一个线索、复盘或新汤面灵感"
+            />
+          </label>
+          <div className="composer-actions">
+            <button className="secondary-btn compact" type="button" onClick={() => setShowComposer(false)}>
+              取消
+            </button>
+            <button className="primary-btn compact" type="button" onClick={() => void handleCreatePost()}>
+              发布
+            </button>
+          </div>
+        </section>
+      )}
       {message && <p className="empty-state">{message}</p>}
       <div className="post-list">
         {posts.map((post) => (
@@ -1228,46 +1388,69 @@ function CommunityScreen() {
               <Avatar name={post.author.slice(0, 2)} tone="cyan" />
               <div>
                 <strong>{post.author}</strong>
-                <span>15分钟前</span>
+                <span>{post.stats}</span>
               </div>
             </div>
             <h3>{post.title}</h3>
             <p>{post.text}</p>
             <div className="post-meta">
-              <Chip label="原创" />
+              <Chip label={post.soupTitle ?? '原创'} />
               <Chip label="悬疑" />
-              <span>{post.stats}</span>
+              <span>{post.createdAt ? new Date(post.createdAt).toLocaleDateString('zh-CN') : '社区精选'}</span>
             </div>
           </article>
         ))}
       </div>
-      <button className="floating-plus" type="button" aria-label="发布汤帖">
+      <button
+        className="floating-plus"
+        type="button"
+        aria-label="发布汤帖"
+        onClick={() => setShowComposer((value) => !value)}
+      >
         <Plus size={22} />
       </button>
     </ScrollView>
   )
 }
 
-function ProfileScreen({ profile, onSignOut }: { profile: AuthProfile; onSignOut: () => void }) {
+function ProfileScreen({
+  profile,
+  refreshKey,
+  onSignOut,
+}: {
+  profile: AuthProfile
+  refreshKey: number
+  onSignOut: () => void
+}) {
   const [stats, setStats] = useState<ProfileStats>({
     winRate: '0%',
     gamesPlayed: '0',
     mvp: '0',
+    favorites: '0',
+    achievements: '0',
   })
+  const [achievements, setAchievements] = useState<AchievementView[]>([])
+  const [history, setHistory] = useState<GameHistoryItem[]>([])
+  const [message, setMessage] = useState('')
 
   useEffect(() => {
     let alive = true
 
-    void fetchProfileStats(profile)
-      .then((nextStats) => {
-        if (alive) setStats(nextStats)
+    void Promise.all([fetchProfileStats(profile), fetchAchievements(profile), fetchGameHistory(profile)])
+      .then(([nextStats, nextAchievements, nextHistory]) => {
+        if (!alive) return
+        setStats(nextStats)
+        setAchievements(nextAchievements)
+        setHistory(nextHistory)
       })
-      .catch(() => undefined)
+      .catch((error: unknown) => {
+        if (alive) setMessage(getErrorMessage(error))
+      })
 
     return () => {
       alive = false
     }
-  }, [profile])
+  }, [profile, refreshKey])
 
   return (
     <ScrollView>
@@ -1286,13 +1469,41 @@ function ProfileScreen({ profile, onSignOut }: { profile: AuthProfile; onSignOut
       <div className="profile-stats">
         <Stat label="胜率" value={stats.winRate} />
         <Stat label="喝汤" value={stats.gamesPlayed} />
-        <Stat label="MVP" value={stats.mvp} />
+        <Stat label="收藏" value={stats.favorites} />
+        <Stat label="成就" value={stats.achievements} />
       </div>
+      {message && <p className="empty-state">{message}</p>}
       <section className="section-block">
         <p className="section-heading">成就</p>
-        <Achievement icon={Sparkles} title="神之一问" text="提出 10 个关键问题" />
-        <Achievement icon={Crown} title="金牌煲汤人" text="获得 5 次 MVP" />
-        <Achievement icon={CircleHelp} title="向夜饮尽" text="收藏 20 个汤底" />
+        {achievements.slice(0, 6).map((achievement, index) => (
+          <Achievement
+            key={achievement.id}
+            icon={index % 3 === 0 ? Sparkles : index % 3 === 1 ? Crown : CircleHelp}
+            title={achievement.title}
+            text={achievement.description}
+            earned={achievement.earned}
+          />
+        ))}
+      </section>
+      <section className="section-block">
+        <p className="section-heading">最近对局</p>
+        {history.length === 0 ? (
+          <p className="empty-state">还没有对局记录。完成一次猜汤底后会出现在这里。</p>
+        ) : (
+          <div className="history-list">
+            {history.map((item) => (
+              <article className="history-item" key={item.id}>
+                <div>
+                  <strong>{item.soupTitle}</strong>
+                  <span>
+                    房间 {item.roomCode} · {item.status === 'finished' ? '已复盘' : item.status === 'playing' ? '进行中' : '等待中'}
+                  </span>
+                </div>
+                <b className={item.isCorrect ? 'correct' : ''}>{item.score == null ? '--' : `${item.score}%`}</b>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
     </ScrollView>
   )
@@ -1349,11 +1560,13 @@ function SoupRow({
   soup,
   active,
   compact,
+  favorite,
   onOpen,
 }: {
   soup: Soup
   active?: boolean
   compact?: boolean
+  favorite?: boolean
   onOpen: () => void
 }) {
   return (
@@ -1367,7 +1580,10 @@ function SoupRow({
         <strong>{soup.title}</strong>
         <span>{soup.tags.join(' · ')}</span>
       </div>
-      <Rating value={soup.rating} />
+      <span className="soup-row-meta">
+        {favorite && <Heart size={13} fill="currentColor" aria-label="已收藏" />}
+        <Rating value={soup.rating} />
+      </span>
     </button>
   )
 }
@@ -1474,15 +1690,25 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function Achievement({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
+function Achievement({
+  icon: Icon,
+  title,
+  text,
+  earned,
+}: {
+  icon: LucideIcon
+  title: string
+  text: string
+  earned?: boolean
+}) {
   return (
-    <div className="achievement">
+    <div className={earned ? 'achievement earned' : 'achievement'}>
       <Icon size={19} />
       <div>
         <strong>{title}</strong>
         <span>{text}</span>
       </div>
-      <ChevronRight size={16} />
+      <span className="achievement-state">{earned ? '已获得' : '未解锁'}</span>
     </div>
   )
 }

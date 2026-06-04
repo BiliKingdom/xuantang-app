@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check:text": "node scripts/check-text-integrity.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
+    "qa:cloud-game": "node scripts/qa-cloud-game.mjs",
     "qa:local-game": "node scripts/qa-local-game.mjs",
     "test": "vitest run"
   },
